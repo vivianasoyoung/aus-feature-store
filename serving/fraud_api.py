@@ -1,102 +1,109 @@
 """
 fraud_api.py
 ------------
-FastAPI endpoint that serves real-time fraud risk scores.
-Looks up account features from the Feast online store
-and returns a risk score for incoming transactions.
+FastAPI endpoint serving fraud risk scores. Backed by:
+  - Feast online store for feature retrieval (account_id lookup)
+  - MLflow Model Registry for the scoring model (versioned)
 """
 
 import os
-import sys
+from datetime import datetime, timezone
+
+import mlflow.sklearn
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from feast import FeatureStore
 from pydantic import BaseModel
-from datetime import datetime
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'feature_repo', 'feature_repo'))
+FEATURE_REPO_PATH = os.getenv("FEATURE_REPO_PATH", "feature_repo")
+MODEL_URI         = os.getenv("MODEL_URI", "models:/cba_fraud_model/Staging")
+DECISION_THRESHOLD = float(os.getenv("DECISION_THRESHOLD", "0.5"))
 
-app = FastAPI(
-    title="CBA Fraud Detection API",
-    description="Real-time fraud risk scoring using Feast feature store",
-    version="1.0.0"
-)
+FEATURE_COLS = [
+    "transaction_count_7d",
+    "total_spend_7d",
+    "avg_transaction_value",
+    "max_transaction_value",
+    "unique_categories",
+    "online_transaction_ratio",
+    "night_transaction_ratio",
+    "avg_daily_spend",
+]
 
-# Load features into memory on startup
-FEATURES_PATH = os.path.join(
-    os.path.dirname(__file__), '..', 
-    'feature_repo', 'feature_repo', 'data', 'account_features.parquet'
-)
-features_df = pd.read_parquet(FEATURES_PATH).set_index('account_id')
+app = FastAPI(title="CBA Fraud Detection API", version="2.0.0")
+
+store: FeatureStore | None = None
+model = None
+
+
+@app.on_event("startup")
+def _startup():
+    global store, model
+    store = FeatureStore(repo_path=FEATURE_REPO_PATH)
+    model = mlflow.sklearn.load_model(MODEL_URI)
+
 
 class Transaction(BaseModel):
     transaction_id: str
-    account_id: str
-    amount: float
+    account_id:     str
+    amount:         float
     merchant_category: str
-    channel: str
+    channel:        str
+
 
 class FraudScore(BaseModel):
     transaction_id: str
-    account_id: str
-    risk_score: float
-    is_fraud: bool
-    reasons: list[str]
-    scored_at: str
+    account_id:     str
+    risk_score:     float
+    is_fraud:       bool
+    explanation:    str
+    scored_at:      str
+
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "accounts_loaded": len(features_df)}
+    return {"status": "ok", "model_uri": MODEL_URI, "threshold": DECISION_THRESHOLD}
+
 
 @app.post("/score", response_model=FraudScore)
-def score_transaction(txn: Transaction):
-    reasons = []
-    risk_score = 0.0
+def score(txn: Transaction) -> FraudScore:
+    feature_refs = [f"account_transaction_features:{c}" for c in FEATURE_COLS]
+    response = store.get_online_features(
+        features=feature_refs,
+        entity_rows=[{"account_id": txn.account_id}],
+    ).to_dict()
 
-    # Look up account features from store
-    if txn.account_id in features_df.index:
-        feat = features_df.loc[txn.account_id]
+    if any(response[c][0] is None for c in FEATURE_COLS):
+        # Cold-start account — flag for manual review with a conservative score.
+        return FraudScore(
+            transaction_id=txn.transaction_id,
+            account_id=txn.account_id,
+            risk_score=0.5,
+            is_fraud=False,
+            explanation="Unknown account — no features in online store",
+            scored_at=datetime.now(timezone.utc).isoformat(),
+        )
 
-        # Rule 1: Large transaction relative to account average
-        if txn.amount > feat["avg_transaction_value"] * 5:
-            reasons.append(f"Amount ${txn.amount} is 5x above account average")
-            risk_score += 40
-
-        # Rule 2: Account is already flagged high risk
-        if feat["is_high_risk"] == 1:
-            reasons.append("Account has high risk transaction history")
-            risk_score += 30
-
-        # Rule 3: Large absolute amount
-        if txn.amount > 5000:
-            reasons.append(f"Large transaction amount: ${txn.amount}")
-            risk_score += 20
-
-        # Rule 4: Online channel with high amount
-        if txn.channel == "ONLINE" and txn.amount > feat["avg_transaction_value"] * 3:
-            reasons.append("Large online transaction relative to account history")
-            risk_score += 10
-
-    else:
-        # Unknown account — flag it
-        reasons.append("Unknown account ID — no history available")
-        risk_score = 50.0
-
-    risk_score = min(risk_score, 100.0)
-    is_fraud = risk_score >= 50
+    X = pd.DataFrame({c: response[c] for c in FEATURE_COLS})
+    prob = float(model.predict_proba(X)[0, 1])
 
     return FraudScore(
         transaction_id=txn.transaction_id,
         account_id=txn.account_id,
-        risk_score=risk_score,
-        is_fraud=is_fraud,
-        reasons=reasons,
-        scored_at=datetime.now().isoformat()
+        risk_score=round(prob, 4),
+        is_fraud=prob >= DECISION_THRESHOLD,
+        explanation=f"model={MODEL_URI} threshold={DECISION_THRESHOLD}",
+        scored_at=datetime.now(timezone.utc).isoformat(),
     )
 
+
 @app.get("/account/{account_id}")
-def get_account_features(account_id: str):
-    if account_id not in features_df.index:
-        return {"error": f"Account {account_id} not found"}
-    feat = features_df.loc[account_id].to_dict()
-    feat.pop("event_timestamp", None)
-    return {"account_id": account_id, "features": feat}
+def account_features(account_id: str):
+    feature_refs = [f"account_transaction_features:{c}" for c in FEATURE_COLS]
+    response = store.get_online_features(
+        features=feature_refs,
+        entity_rows=[{"account_id": account_id}],
+    ).to_dict()
+    if all(response[c][0] is None for c in FEATURE_COLS):
+        raise HTTPException(404, f"No features for account {account_id}")
+    return {"account_id": account_id, "features": {c: response[c][0] for c in FEATURE_COLS}}
