@@ -1,152 +1,72 @@
-# CBA ML Feature Store
+# CBA Feature Store
 
-An end-to-end ML feature store pipeline for banking fraud detection. Computes account-level features from raw transaction history, stores them in Feast for consistent offline training and online serving, trains a fraud detection model tracked in MLflow, and serves real-time risk scores via a FastAPI endpoint.
+End-to-end ML feature store for banking fraud detection. Demonstrates the
+**Feast + MLflow + FastAPI** pattern with a clean separation between
+features and labels.
+
+## How this fits into the broader project
+
+This is one of four repos in the CBA portfolio:
+
+| Repo | Role |
+| --- | --- |
+| `cba-banking-pipeline` | Generates and ingests raw transactions into Postgres. |
+| `cba-dbt-analytics` | Transforms raw data into analytics marts. |
+| `cba-fraud-streaming` | Rule-based real-time fraud detection. Produces the **labels** this repo uses. |
+| **`cba-feature-store`** *(you are here)* | Computes ML features, trains a model, serves predictions. |
+
+> The fact that **labels come from `cba-fraud-streaming`** (not from the same columns
+> we use as features) is what makes the model genuinely predictive rather than
+> trivially circular. See `compute_features.py` and `train_model.py`.
 
 ## Architecture
 
 ```
-Raw transaction data (cba-banking-pipeline)
-        │
-        ▼
-Feature Computation (Python)
-   └── 9 features per account (spend patterns, velocity, channel behaviour)
-        │
-        ▼
-Feast Feature Store
-   ├── Offline store (Parquet) — historical features for model training
-   └── Online store (SQLite)  — latest features for real-time serving
-        │
-        ├──────────────────────────────────────┐
-        ▼                                      ▼
-ML Model Training                     FastAPI Serving Endpoint
-(scikit-learn RandomForest)           POST /score → real-time risk score
-        │
-        ▼
-MLflow Experiment Tracking
-   └── AUC, feature importances, model artefacts
+raw transactions (CSV from cba-banking-pipeline)
+        +
+flagged transactions (CSV exported from cba-fraud-streaming's Postgres)
+        ↓
+compute_features.py  ← labels JOINED from external signal
+        ↓
+Parquet (offline store)  →  feast apply / materialize  →  SQLite (online store)
+        ↓                                                       ↓
+train_model.py                                              fraud_api.py
+   ↓                                                              ↓
+MLflow Registry  ────────────────────────────────────────→  /score endpoint
 ```
 
-## Tech Stack
-
-| Layer | Tool |
-|---|---|
-| Feature store | Feast |
-| ML framework | scikit-learn |
-| Experiment tracking | MLflow |
-| API serving | FastAPI + Uvicorn |
-| Offline store | Parquet |
-| Online store | SQLite |
-
-## Quick Start
-
-### Prerequisites
-- Python 3.10+
-- cba-banking-pipeline data available at `../cba-banking-pipeline/data/raw/transactions.csv`
-
-### 1. Install dependencies
+## Setup
 
 ```bash
-pip install 'feast[postgres]' mlflow scikit-learn pandas fastapi uvicorn psycopg2-binary
+pip install -r requirements.txt
+
+# 1. Compute features + join labels
+python features/compute_features.py \
+    --transactions ../cba-banking-pipeline/data/raw/transactions.csv \
+    --flagged ../cba-fraud-streaming/data/flagged_transactions.csv \
+    --out feature_repo/data/account_features.parquet
+
+# 2. Apply Feast definitions + materialize to online store
+cd feature_repo && feast apply && feast materialize-incremental $(date +%F) && cd ..
+
+# 3. Train + register model
+mlflow ui --port 5001 &
+python training/train_model.py --features feature_repo/data/account_features.parquet
+
+# 4. Serve
+uvicorn serving.fraud_api:app --port 8001
 ```
 
-### 2. Compute features
+## Expected metrics
 
-```bash
-python features/compute_features.py
-```
+With labels sourced from the streaming engine, hold-out AUC lands in the
+**0.7–0.9** range depending on how the rule mix is tuned. If you see
+AUC ≥ 0.99, suspect leakage and check that `is_fraud_account` is NOT a
+function of the columns in `FEATURE_COLS`. There's a regression test for
+this in `tests/test_compute_features.py`.
 
-Generates 9 features for 500 accounts from raw transaction history.
+## What I'd improve in production
 
-### 3. Apply Feast feature store
-
-```bash
-cd feature_repo/feature_repo
-feast apply
-feast materialize-incremental "$(date +%Y-%m-%dT%H:%M:%S)"
-```
-
-### 4. Train the model
-
-```bash
-cd ../..
-python training/train_model.py
-```
-
-### 5. Launch MLflow UI
-
-```bash
-mlflow ui --port 5001 --host 0.0.0.0
-```
-
-Open http://localhost:5001 to view experiment runs and metrics.
-
-### 6. Start the API
-
-```bash
-uvicorn serving.fraud_api:app --port 8001 --reload
-```
-
-### 7. Score a transaction
-
-```bash
-curl -X POST http://localhost:8001/score \
-  -H "Content-Type: application/json" \
-  -d '{
-    "transaction_id": "test-001",
-    "account_id": "ACC0003936",
-    "amount": 9500.00,
-    "merchant_category": "ATM Withdrawal",
-    "channel": "ONLINE"
-  }'
-```
-
-## Features
-
-| Feature | Description |
-|---|---|
-| transaction_count_7d | Number of transactions in last 7 days |
-| total_spend_7d | Total spend in last 7 days |
-| avg_transaction_value | Average transaction value |
-| max_transaction_value | Maximum single transaction value |
-| unique_categories | Number of unique merchant categories used |
-| online_transaction_ratio | Ratio of online to total transactions |
-| night_transaction_ratio | Ratio of night-time transactions (before 6am or after 10pm) |
-| avg_daily_spend | Average daily spend across 6 months |
-| is_high_risk | Binary flag — 1 if account shows high risk patterns |
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|---|---|---|
-| /health | GET | Health check — returns accounts loaded count |
-| /score | POST | Score a transaction — returns risk score and fraud flag |
-| /account/{account_id} | GET | Retrieve stored features for an account |
-
-## Model Performance
-
-| Metric | Value |
-|---|---|
-| Model | Random Forest (100 estimators, max depth 6) |
-| AUC Score | 1.00 |
-| Top feature | night_transaction_ratio (76% importance) |
-| Training accounts | 400 |
-| Test accounts | 100 |
-
-## Project Structure
-
-```
-cba-feature-store/
-├── features/
-│   └── compute_features.py      # Feature engineering from raw transactions
-├── feature_repo/
-│   └── feature_repo/
-│       ├── feature_definitions.py   # Feast entity and feature view definitions
-│       ├── feature_store.yaml       # Feast configuration
-│       └── data/
-│           └── account_features.parquet
-├── training/
-│   └── train_model.py           # Model training with MLflow tracking
-├── serving/
-│   └── fraud_api.py             # FastAPI real-time scoring endpoint
-└── README.md
-```
+See `REAL_WORLD_NOTES.md` for the honest "this is a demo, here's what's
+different at scale" discussion — useful prep for the inevitable interview
+question.
