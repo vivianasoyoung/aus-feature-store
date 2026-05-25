@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      # Lean test-only deps. The full app stack (feast, mlflow, fastapi) lives
+      # in requirements.txt; the unit tests only need the data + ML libs, so we
+      # install a minimal set to keep CI fast and reliable.
+      - name: Install test dependencies
+        run: pip install pandas pyarrow scikit-learn ruff pytest
+
+      - name: Lint
+        run: ruff check features/ training/
+
+      - name: Import-check feature computation
+        run: python -c "import sys; sys.path.insert(0, '.'); import features.compute_features"
+
+      - name: Unit tests (includes target-leakage regression guard)
+        run: pytest -v
