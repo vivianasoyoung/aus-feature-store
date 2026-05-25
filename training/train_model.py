@@ -1,5 +1,4 @@
 """
-
 train_model.py
 --------------
 Trains a fraud detection classifier.
@@ -10,11 +9,9 @@ label definition from feature definition and is what makes the task
 genuinely predictive instead of trivially circular.
 
 Logs experiment to MLflow and registers the model under `cba_fraud_model`.
-
 """
 
 import argparse
-import os
 
 import mlflow
 import mlflow.sklearn
