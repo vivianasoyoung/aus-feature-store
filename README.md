@@ -1,72 +1,82 @@
-# CBA Feature Store
+# Australian Banking Feature Store
 
-End-to-end ML feature store for banking fraud detection. Demonstrates the
-**Feast + MLflow + FastAPI** pattern with a clean separation between
-features and labels.
+End-to-end ML feature store for banking fraud detection. Demonstrates the **Feast + MLflow + FastAPI** pattern with a clean separation between features and labels.
 
-## How this fits into the broader project
+> **Disclaimer:** Personal learning project built with entirely synthetic, programmatically generated data. Not affiliated with, endorsed by, or using systems, schemas, or data from any financial institution.
 
-This is one of four repos in the CBA portfolio:
+## How this fits with the rest of the project
 
-| Repo | Role |
-| --- | --- |
-| `cba-banking-pipeline` | Generates and ingests raw transactions into Postgres. |
-| `cba-dbt-analytics` | Transforms raw data into analytics marts. |
-| `cba-fraud-streaming` | Rule-based real-time fraud detection. Produces the **labels** this repo uses. |
-| **`cba-feature-store`** *(you are here)* | Computes ML features, trains a model, serves predictions. |
+| Repo | Stack | Role |
+| --- | --- | --- |
+| [`aus-banking-pipeline`](https://github.com/vivianasoyoung/aus-banking-pipeline) | Airflow, Postgres, Docker | Foundation: synthetic data generation + batch ingestion |
+| [`aus-dbt-analytics`](https://github.com/vivianasoyoung/aus-dbt-analytics) | dbt-postgres, dbt_utils | Staging → intermediate → marts transformations |
+| [`aus-fraud-streaming`](https://github.com/vivianasoyoung/aus-fraud-streaming) | Kafka, Python, Postgres | Real-time rule-based fraud detection. Produces the **labels** this repo uses. |
+| **[`aus-feature-store`](https://github.com/vivianasoyoung/aus-feature-store)** *(You are here)* | Feast, MLflow, FastAPI | ML feature store + model serving |
 
-> The fact that **labels come from `cba-fraud-streaming`** (not from the same columns
-> we use as features) is what makes the model genuinely predictive rather than
-> trivially circular. See `compute_features.py` and `train_model.py`.
+> Labels come from `aus-fraud-streaming` (not from the same columns used as features). This decoupling is what makes the model genuinely predictive rather than trivially circular.
+
+---
 
 ## Architecture
 
 ```
-raw transactions (CSV from cba-banking-pipeline)
+raw transactions (from aus-banking-pipeline)
         +
-flagged transactions (CSV exported from cba-fraud-streaming's Postgres)
+flagged transactions (labels from aus-fraud-streaming)
         ↓
-compute_features.py  ← labels JOINED from external signal
+compute_features.py  ← labels joined from an independent signal
         ↓
-Parquet (offline store)  →  feast apply / materialize  →  SQLite (online store)
-        ↓                                                       ↓
-train_model.py                                              fraud_api.py
-   ↓                                                              ↓
-MLflow Registry  ────────────────────────────────────────→  /score endpoint
+Parquet (offline)  →  feast apply / materialize  →  SQLite (online)
+        ↓                                              ↓
+train_model.py                                     fraud_api.py
+   ↓                                                   ↓
+MLflow Registry  ──────────────────────────────→  /score endpoint
 ```
 
-## Setup
+## Tech Stack
+
+| Component | Tool |
+|---|---|
+| Feature store | Feast (offline Parquet + online SQLite) |
+| ML | scikit-learn (RandomForest + LogReg baseline) |
+| Experiment tracking | MLflow |
+| Serving | FastAPI + Uvicorn |
+
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
 
-# 1. Compute features + join labels
 python features/compute_features.py \
-    --transactions ../cba-banking-pipeline/data/raw/transactions.csv \
-    --flagged ../cba-fraud-streaming/data/flagged_transactions.csv \
+    --transactions ../aus-banking-pipeline/data/raw/transactions.csv \
+    --flagged ../aus-fraud-streaming/data/flagged_transactions.csv \
     --out feature_repo/data/account_features.parquet
 
-# 2. Apply Feast definitions + materialize to online store
 cd feature_repo && feast apply && feast materialize-incremental $(date +%F) && cd ..
 
-# 3. Train + register model
 mlflow ui --port 5001 &
 python training/train_model.py --features feature_repo/data/account_features.parquet
 
-# 4. Serve
 uvicorn serving.fraud_api:app --port 8001
 ```
 
-## Expected metrics
+## Feature / Label Design
 
-With labels sourced from the streaming engine, hold-out AUC lands in the
-**0.7–0.9** range depending on how the rule mix is tuned. If you see
-AUC ≥ 0.99, suspect leakage and check that `is_fraud_account` is NOT a
-function of the columns in `FEATURE_COLS`. There's a regression test for
-this in `tests/test_compute_features.py`.
+Features describe account behaviour (transaction counts, spend, night/online ratios, etc.). **Labels are sourced from the streaming fraud engine** — an independent signal — not derived from the feature columns. A regression test (`tests/test_compute_features.py`) fails if any single feature can trivially reconstruct the label, guarding against target leakage.
 
-## What I'd improve in production
+## Expected Metrics
 
-See `REAL_WORLD_NOTES.md` for the honest "this is a demo, here's what's
-different at scale" discussion — useful prep for the inevitable interview
-question.
+With labels sourced externally, hold-out AUC lands in a realistic ~0.7–0.9 range. (An AUC of 1.00 would indicate leakage — there's a test to catch exactly that.)
+
+## Project Structure
+
+```
+aus-feature-store/
+├── features/compute_features.py
+├── feature_repo/            # Feast definitions + data
+├── training/train_model.py
+├── serving/fraud_api.py
+├── tests/test_compute_features.py
+├── requirements.txt
+└── README.md
+```
