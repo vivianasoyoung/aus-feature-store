@@ -1,7 +1,7 @@
 """
 feature_definitions.py
 -----------------------
-Defines banking fraud detection features for the CBA feature store.
+Defines banking fraud detection features for the AU banking feature store.
 These features are computed from transaction history and used by
 fraud detection ML models for both training and real-time serving.
 """
@@ -15,7 +15,7 @@ from feast.types import Float64, Int64, String
 # An entity is the thing we're computing features about — in this case accounts
 account = Entity(
     name="account_id",
-    description="A CBA bank account"
+    description="An Australian retail bank account"
 )
 
 # ── Data Source ───────────────────────────────────────────────────────────────

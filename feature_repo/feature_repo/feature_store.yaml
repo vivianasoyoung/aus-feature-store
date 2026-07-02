@@ -1,4 +1,4 @@
-project: cba_fraud_features
+project: aus_fraud_features
 registry: data/registry.db
 provider: local
 online_store:

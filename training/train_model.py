@@ -4,11 +4,11 @@ train_model.py
 Trains a fraud detection classifier.
 
 Labels are EXTERNAL to the features (sourced from the streaming fraud
-engine via cba-fraud-streaming → compute_features.py). This decouples
+engine via aus-fraud-streaming → compute_features.py). This decouples
 label definition from feature definition and is what makes the task
 genuinely predictive instead of trivially circular.
 
-Logs experiment to MLflow and registers the model under `cba_fraud_model`.
+Logs experiment to MLflow and registers the model under `aus_fraud_model`.
 """
 
 import argparse
@@ -24,8 +24,8 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-REGISTERED_MODEL_NAME = "cba_fraud_model"
-EXPERIMENT_NAME = "cba_fraud_detection"
+REGISTERED_MODEL_NAME = "aus_fraud_model"
+EXPERIMENT_NAME = "aus_fraud_detection"
 
 FEATURE_COLS = [
     "transaction_count_7d",

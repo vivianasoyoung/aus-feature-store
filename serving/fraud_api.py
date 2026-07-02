@@ -16,7 +16,7 @@ from feast import FeatureStore
 from pydantic import BaseModel
 
 FEATURE_REPO_PATH = os.getenv("FEATURE_REPO_PATH", "feature_repo")
-MODEL_URI         = os.getenv("MODEL_URI", "models:/cba_fraud_model/Staging")
+MODEL_URI         = os.getenv("MODEL_URI", "models:/aus_fraud_model/Staging")
 DECISION_THRESHOLD = float(os.getenv("DECISION_THRESHOLD", "0.5"))
 
 FEATURE_COLS = [
@@ -30,7 +30,7 @@ FEATURE_COLS = [
     "avg_daily_spend",
 ]
 
-app = FastAPI(title="CBA Fraud Detection API", version="2.0.0")
+app = FastAPI(title="AU Fraud Detection API", version="2.0.0")
 
 store: FeatureStore | None = None
 model = None
