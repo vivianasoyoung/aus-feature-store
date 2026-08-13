@@ -1,51 +1,0 @@
-
-I
-)
-__dummy"
-__dummy_idJcba_fraud_features
-ñÎáÏ¸êâØñÎáÏ¸êâØ
-`
-@
-
-account_idA CBA bank account"
-account_idJcba_fraud_features
-ñÎáÏÀ‹åØñÎáÏÀ‹åØ1"$86e61b74-db27-48b3-818c-ef121592be3c*…ÏáÏÈÜˆ¥2Ê
-‘
-account_transaction_featurescba_fraud_features
-account_id"?
-transaction_count_7d"%Number of transactions in last 7 days".
-total_spend_7d"Total spend in last 7 days"4
-avg_transaction_value"Average transaction value";
-max_transaction_value" Maximum single transaction value";
-unique_categories"$Number of unique merchant categories"C
-online_transaction_ratio"%Ratio of online to total transactions"=
-night_transaction_ratio" Ratio of night-time transactions"(
-avg_daily_spend"Average daily spend"7
-is_high_risk"%1 if account shows high risk patterns2€õ$:§event_timestampZdata/account_features.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢data/account_features.parquet’ñÎáÏ¸ööĞ"ñÎáÏø´ßØ@b
-
-account_id’latest4
-ñÎáÏØıæØ…ÏáÏè“¥
-„Ú¼Ïğòıª¢èãÏRÂ
-¿
-,feast.infra.online_stores.sqlite.SqliteTable"
-[/Users/vivianayou/projects/cba-feature-store/feature_repo/feature_repo/data/online_store.db/cba_fraud_features_account_transaction_featuresb¼event_timestampZdata/account_features.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢data/account_features.parquetªcba_fraud_features’ñÎáÏ¸ööĞ"ñÎáÏø´ßØŠ4
-
-cba_fraud_features
-ñÎáÏèú™ÑñÎáÏèú™Ñ’¬
-©
-account_transaction_featurescba_fraud_features"feature_view*²
-‘
-account_transaction_featurescba_fraud_features
-account_id"?
-transaction_count_7d"%Number of transactions in last 7 days".
-total_spend_7d"Total spend in last 7 days"4
-avg_transaction_value"Average transaction value";
-max_transaction_value" Maximum single transaction value";
-unique_categories"$Number of unique merchant categories"C
-online_transaction_ratio"%Ratio of online to total transactions"=
-night_transaction_ratio" Ratio of night-time transactions"(
-avg_daily_spend"Average daily spend"7
-is_high_risk"%1 if account shows high risk patterns2€õ$:§event_timestampZdata/account_features.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢data/account_features.parquet’ñÎáÏ¸ööĞ"ñÎáÏø´ßØ@b
-
-account_id’latest
-ñÎáÏØıæØñÎáÏØıæØ2ñÎáÏĞ¸ğØB$cbc73961-0f60-45a4-8063-799ef7df77b6
