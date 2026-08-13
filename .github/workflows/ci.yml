@@ -20,7 +20,7 @@ jobs:
       # in requirements.txt; the unit tests only need the data + ML libs, so we
       # install a minimal set to keep CI fast and reliable.
       - name: Install test dependencies
-        run: pip install pandas pyarrow scikit-learn "ruff==0.16.2" pytest
+        run: pip install pandas pyarrow scikit-learn "ruff==0.16.2" pytest fastapi httpx
 
       - name: Lint
         run: ruff check features/ training/
