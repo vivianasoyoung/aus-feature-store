@@ -4,6 +4,6 @@ __pycache__/
 *.pyc
 .DS_Store
 *.db
-feature_repo/feature_repo/data/online_store.db
-feature_repo/feature_repo/data/registry.db
+feature_repo/data/online_store.db
+feature_repo/data/registry.db
 .env
