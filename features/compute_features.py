@@ -16,7 +16,6 @@ from datetime import timedelta
 
 import pandas as pd
 
-
 WINDOW_DAYS = 7
 
 
