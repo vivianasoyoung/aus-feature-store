@@ -9,10 +9,9 @@ FastAPI endpoint serving fraud risk scores. Backed by:
 import os
 from datetime import datetime, timezone
 
-import mlflow.sklearn
+
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from feast import FeatureStore
 from pydantic import BaseModel
 
 FEATURE_REPO_PATH = os.getenv("FEATURE_REPO_PATH", "feature_repo")
@@ -32,13 +31,15 @@ FEATURE_COLS = [
 
 app = FastAPI(title="AU Fraud Detection API", version="2.0.0")
 
-store: FeatureStore | None = None
+store = None
 model = None
-
 
 @app.on_event("startup")
 def _startup():
     global store, model
+    import mlflow.sklearn
+    from feast import FeatureStore
+
     store = FeatureStore(repo_path=FEATURE_REPO_PATH)
     model = mlflow.sklearn.load_model(MODEL_URI)
 
